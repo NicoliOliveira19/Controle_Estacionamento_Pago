@@ -1,29 +1,51 @@
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
+import java.time.Duration;
 import java.time.LocalDateTime;
 
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+public class CalculadoraEstacionamento {
 
-public class CalculadoraEstacionamentoTest {
+    private final InfosEstacionamento infos;
 
-    InfosEstacionamento infos = new InfosEstacionamento();
-    CalculadoraEstacionamento calc = new CalculadoraEstacionamento(infos);
+    public CalculadoraEstacionamento(InfosEstacionamento infos) {
+        this.infos = infos;
+    }
 
-    @ParameterizedTest
-    @CsvSource({
-        // entrada, saida, vip, esperado
-        "2025-04-18T08:00,2025-04-18T08:10,false,0.00",     // cortesia
-        "2025-04-18T08:00,2025-04-18T08:21,false,9.00",     // tarifa fixa
-        "2025-04-18T08:00,2025-04-18T09:01,false,14.55",    // com incremento
-        "2025-04-18T08:00,2025-04-18T08:21,true,4.50",      // VIP com tarifa fixa
-        "2025-04-18T08:00,2025-04-19T08:01,false,50.00",    // pernoite
-        "2025-04-18T08:00,2025-04-19T08:01,true,25.00"      // pernoite VIP
-    })
-    public void testarCalculo(String entradaStr, String saidaStr, boolean vip, double esperado) {
-        LocalDateTime entrada = LocalDateTime.parse(entradaStr);
-        LocalDateTime saida = LocalDateTime.parse(saidaStr);
-        double resultado = calc.calcularTarifa(entrada, saida, vip);
-        assertEquals(esperado, resultado, 0.01);
+    public double calcularTarifa(LocalDateTime entrada, LocalDateTime saida, boolean isVip) {
+        if (!entradaValida(entrada) || !saidaValida(saida)) {
+            throw new IllegalArgumentException("Horário de entrada ou saída inválido.");
+        }
+
+        Duration duracao = Duration.between(entrada, saida);
+        long minutos = duracao.toMinutes();
+
+        // Cortesia 
+        if (minutos <= infos.getCORTESIA_MINUTOS()) {
+            return 0.0;
+        }
+
+        // Pernoite
+        boolean pernoite = saida.toLocalDate().isAfter(entrada.toLocalDate()) &&
+                           saida.toLocalTime().isAfter(infos.getABERTURA().toLocalTime());
+        if (pernoite) {
+            return isVip ? infos.getPERNOITE() / 2 : infos.getPERNOITE();
+        }
+
+        // Até 1h
+        if (minutos <= 60) {
+            return isVip ? infos.getTARIFA_PADRAO() / 2 : infos.getTARIFA_PADRAO();
+        }
+
+        // Acima de 1h
+        long horasCompletas = (minutos + 59) / 60; // arredonda para cima
+        double valor = infos.getTARIFA_PADRAO() + (horasCompletas - 1) * infos.getTARIFA_INCREMENTO();
+
+        return isVip ? valor / 2 : valor;
+    }
+
+    private boolean entradaValida(LocalDateTime entrada) {
+        return !entrada.isBefore(infos.getABERTURA()) && !entrada.isAfter(infos.getENTRADA_LIMITE());
+    }
+
+    private boolean saidaValida(LocalDateTime saida) {
+        return !saida.isBefore(infos.getABERTURA()) && !saida.isAfter(infos.getSAIDA_LIMITE());
     }
 }
